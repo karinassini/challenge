@@ -1,3 +1,6 @@
+import numpy as np
+
+
 def continuous_to_binary(y_array: np.array, threshold: float = None) -> list:
     """Convert an np.array with continuous values to boolean according to the threshold specified. The threshold is defined according to the **define_best_threshold** method.
 
