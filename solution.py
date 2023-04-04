@@ -17,6 +17,7 @@ import datetime
 import matplotlib.pyplot as plt
 from matplotlib.ticker import PercentFormatter
 import seaborn as sns
+
 %matplotlib inline
 
 from scipy import stats
@@ -24,13 +25,22 @@ import association_metrics as am
 import pingouin as pg
 
 from sklearn.model_selection import train_test_split, StratifiedKFold
-from sklearn.metrics import f1_score, precision_score, recall_score, classification_report, confusion_matrix
+from sklearn.metrics import (
+    f1_score,
+    precision_score,
+    recall_score,
+    classification_report,
+    confusion_matrix,
+)
 import lightgbm as lgbm
 from catboost import CatBoostClassifier, Pool
 from sklearn.preprocessing import OneHotEncoder
 import category_encoders as ce
 
-from core.functions import continuous_to_binary, lgbm_class_hyperparameter_tuning_pipeline
+from core.functions import (
+    continuous_to_binary,
+    lgbm_class_hyperparameter_tuning_pipeline,
+)
 
 import optuna
 import shap
@@ -40,6 +50,7 @@ warnings.filterwarnings("ignore")
 # COMMAND ----------
 
 import mlflow
+
 mlflow.autolog(disable=True)
 
 # COMMAND ----------
@@ -95,6 +106,7 @@ df.head()
 
 # COMMAND ----------
 
+# Understanding unique values to aid in feature engineering analysis
 for column in df.columns:
     print(f"Column {column} has {df[column].nunique()} unique values.")
 
@@ -117,7 +129,7 @@ df.query("operation_number.isna()", engine="python")
 # MAGIC %md
 # MAGIC #### Understanding correlation between flight operation data for filling null data in operation_number
 # MAGIC 
-# MAGIC -Note: It is important to review and validate these methods for filling in the missing values with experts from the business community.
+# MAGIC - Note: It is important to review and validate these methods for filling in the missing values with experts from the business.
 
 # COMMAND ----------
 
@@ -134,11 +146,10 @@ operational_columns = [
 
 # COMMAND ----------
 
+# Initialize a CramersV object: understanding categorical x categorial correlation
+
 df_aux = df[operational_columns].dropna()
 
-# COMMAND ----------
-
-# Initialize a CramersV object: understanding categorical x categorial correlation 
 df_aux = df_aux.apply(lambda x: x.astype("category") if x.dtype == "O" else x)
 
 cramers_v = am.CramersV(df_aux)
@@ -164,15 +175,32 @@ for (x, y), t in np.ndenumerate(cfit):
 
 # COMMAND ----------
 
-# Destination_city_name represents the same information as operation_destination_city_code
-compare_values = np.all(
-    pd.factorize(df["destination_city_name"])[0]
-    == pd.factorize(df["operation_destination_city_code"])[0]
-)
-compare_values
+[
+    "scheduled_date_and_time",
+    "scheduled_flight_number",
+    "scheduled_destination_city_code",
+    "scheduled_airline_code",
+    "operation_date_and_time",
+    "operation_number",
+    "operation_destination_city_code",
+    "operated_airline_code",
+    "day_operation",
+    "month_operation",
+    "year_operation",
+    "day_of_the_week_operation",
+    "type_of_flight",
+    "airline_that_operates",
+    "high_season",
+    "min_diff",
+    "delay_15",
+    "period_day",
+    "count_flights_same_datetime",
+    "scheduled_destination_city_airline",
+]
 
 # COMMAND ----------
 
+# Destination_city_name represents the same information as operation_destination_city_code because they identify the destination city (operation)
 df = df.drop("destination_city_name", axis=1)
 
 # COMMAND ----------
@@ -206,6 +234,7 @@ df.iloc[6068]
 
 # COMMAND ----------
 
+# Almost all schedules were attended to
 df.query("scheduled_destination_city_code == operation_destination_city_code").shape[
     0
 ] / df.shape[0]
@@ -221,14 +250,13 @@ sns.catplot(
         "scheduled_destination_city_code == operation_destination_city_code"
     )["scheduled_destination_city_code"]
     .value_counts()
-    .iloc[:5]
+    .iloc[:7]
     .index,
     height=5,
     aspect=3,
     legend=True,
     jitter="0.25",
-    hue="type_of_flight",
-    kind="violin"
+    kind="violin",
 )
 
 # COMMAND ----------
@@ -238,22 +266,25 @@ sns.catplot(
     y="day_operation",
     x="scheduled_destination_city_code",
     data=df.query("scheduled_destination_city_code == operation_destination_city_code"),
-    order=df.query("scheduled_destination_city_code == operation_destination_city_code")["scheduled_destination_city_code"].value_counts().iloc[:5].index,
+    order=df.query(
+        "scheduled_destination_city_code == operation_destination_city_code"
+    )["scheduled_destination_city_code"]
+    .value_counts()
+    .iloc[:6]
+    .index,
     height=5,
     aspect=3,
     legend=True,
-    jitter = '0.25',
-    hue="type_of_flight",
-    kind="violin"
+    jitter="0.25",
+    kind="violin",
 )
-
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC #### Distribution: most frequent destinations
 # MAGIC 
-# MAGIC - It seems that there is a bimodal distribution (for the most operated city destinations ) and the actual achieved destination operation to the programmed
+# MAGIC - There seems to be a bimodal distribution when scheduled destinations are equal to operated ones (for the most operated city destinations)
 # MAGIC 
 # MAGIC - Peaks in January and December
 
@@ -329,6 +360,8 @@ df.query("scheduled_destination_city_code != operation_destination_city_code").s
 
 # SCIE close to normal
 # More problems with international flights
+# Only the 14 cities were not reached in the flight schedule
+# 50% domestic and 50% international destinations
 sns.catplot(
     y="month_operation",
     x="scheduled_destination_city_code",
@@ -337,13 +370,11 @@ sns.catplot(
         "scheduled_destination_city_code != operation_destination_city_code"
     )["scheduled_destination_city_code"]
     .value_counts()
-    .iloc[:5]
     .index,
     height=5,
     aspect=3,
     legend=True,
     jitter="0.25",
-    hue="type_of_flight",
     kind="violin",
 ).ax.set_ylim(0, 13)
 
@@ -441,9 +472,8 @@ plt.show()
 
 # COMMAND ----------
 
-df.query("scheduled_airline_code != operated_airline_code").shape[
-    0
-] / df.shape[0]
+# Changing airlines happens much more than the destination city.
+df.query("scheduled_airline_code != operated_airline_code").shape[0] / df.shape[0]
 
 # COMMAND ----------
 
@@ -462,12 +492,13 @@ sns.catplot(
     legend=True,
     jitter="0.25",
     hue="type_of_flight",
-  kind="violin"
+    kind="violin",
 )
 
 # COMMAND ----------
 
 # Companies that changed programming the most
+# For some companies, the last days of the month can be more critical
 sns.catplot(
     y="day_operation",
     x="scheduled_airline_code",
@@ -483,27 +514,30 @@ sns.catplot(
     legend=True,
     jitter="0.25",
     hue="type_of_flight",
-  kind="violin"
+    kind="violin",
 )
 
 # COMMAND ----------
 
+# Companies that changed programming the most
+# This appears to be a bimodal distribution, with peaks at the beginning and end of the year.
 sns.catplot(
-    y="day_operation",
-    x="operated_airline_code",
+    y="month_operation",
+    x="scheduled_airline_code",
     data=df.query("scheduled_airline_code != operated_airline_code"),
     order=df.query("scheduled_airline_code != operated_airline_code")[
-        "operated_airline_code"
+        "scheduled_airline_code"
     ]
     .value_counts()
-    .iloc[:5]
     .index,
     height=5,
     aspect=3,
     legend=True,
     jitter="0.25",
+    kind="violin",
+    split=True,
     hue="type_of_flight",
-)
+).ax.set_ylim(0, 13)
 
 # COMMAND ----------
 
@@ -593,6 +627,8 @@ df = df.drop(
 
 # COMMAND ----------
 
+# Assumption: Start and end days must be included in the attribute.
+
 mask = (
     (df["scheduled_date_and_time"] >= "2017-12-15 00:00:00")
     | (df["scheduled_date_and_time"] < "2017-03-04 00:00:00")
@@ -668,8 +704,7 @@ df["period_day"] = np.select(
 # COMMAND ----------
 
 aux = (
-    df
-    .groupby(["scheduled_date_and_time", "scheduled_airline_code"])
+    df.groupby(["scheduled_date_and_time", "scheduled_airline_code"])
     .count()
     .reset_index()[
         ["scheduled_date_and_time", "scheduled_airline_code", "scheduled_flight_number"]
@@ -693,7 +728,7 @@ assert df_merged.shape[0] == df.shape[0]
 # COMMAND ----------
 
 df["count_flights_same_datetime"] = (
-    df_merged["count_flights_same_datetime"].map({1: 0, 2: 1, 3: 2, 4:3}).fillna(0)
+    df_merged["count_flights_same_datetime"].map({1: 0, 2: 1, 3: 2, 4: 3}).fillna(0)
 )
 
 # COMMAND ----------
@@ -709,7 +744,15 @@ df["scheduled_destination_city_airline"] = (
 
 # COMMAND ----------
 
-df["scheduled_destination_city_airline"] .value_counts()
+# MAGIC %md 
+# MAGIC 
+# MAGIC #### Save to csv
+
+# COMMAND ----------
+
+df[
+    ["high_season", "min_diff", "delay_15", "period_day"]
+].to_csv("data/synthetic_features.csv")
 
 # COMMAND ----------
 
@@ -731,25 +774,40 @@ df["scheduled_destination_city_airline"] .value_counts()
 # COMMAND ----------
 
 # Perform a hypothesis testing: non-parametric method - Spearman rank-correlation.
-subj = ['delay_15']
+subj = ["delay_15"]
 personality = list(set(df.columns) - set("delay_15"))
-pg.pairwise_corr(df, columns=[subj, personality], method="spearman").round(3).sort_values(by="p-unc")
+pg.pairwise_corr(df, columns=[subj, personality], method="spearman").round(
+    3
+).sort_values(by="p-unc")
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC - The results show that the probability **first 5** rows pair-wise correlation values are lower than the conventional 5% (P<0.05), **thus here the alternative hypothesis is true**.
-# MAGIC - The features high_season, month_operation, count_flights_same_datetime are correlated with the target (delay_15). We can expect it to perform well in models.
+# MAGIC - The features high_season, month_operation, count_flights_same_datetime are correlated with the target (delay_15).
+# MAGIC - Since the variables have relatively low correlation, we cannot assume that the model will perform well. For future work, others algorithms are needed to understand the significance of the variables (independent x dependent)
 
 # COMMAND ----------
 
-fig, axs = plt.subplots(2, 2, figsize=(10,5))
-sns.scatterplot(data=df, x="high_season", y="delay_15", ax=axs[0, 0], hue="type_of_flight")
+fig, axs = plt.subplots(2, 2, figsize=(10, 5))
+sns.scatterplot(
+    data=df, x="high_season", y="delay_15", ax=axs[0, 0], hue="type_of_flight"
+)
 axs[0, 0].set_title("high_season")
-sns.scatterplot(data=df, x="month_operation", y="delay_15", ax=axs[0, 1],  hue="type_of_flight")
+sns.scatterplot(
+    data=df, x="month_operation", y="delay_15", ax=axs[0, 1], hue="type_of_flight"
+)
 axs[0, 1].set_title("month_operation")
-sns.scatterplot(data=df, x="count_flights_same_datetime", y="delay_15", ax=axs[1, 0],  hue="type_of_flight")
-sns.scatterplot(data=df, x="day_operation", y="delay_15", ax=axs[1, 1],  hue="type_of_flight")
+sns.scatterplot(
+    data=df,
+    x="count_flights_same_datetime",
+    y="delay_15",
+    ax=axs[1, 0],
+    hue="type_of_flight",
+)
+sns.scatterplot(
+    data=df, x="day_operation", y="delay_15", ax=axs[1, 1], hue="type_of_flight"
+)
 
 for ax in axs.flat:
     ax.set(ylabel="delay_15")
@@ -761,22 +819,39 @@ for ax in axs.flat:
 # COMMAND ----------
 
 # 18% of flights with delays of more than 15 minutes were operated by another airline
-df.query("scheduled_airline_code != operated_airline_code")["delay_15"].value_counts(normalize=True)
+df.query("scheduled_airline_code != operated_airline_code")["delay_15"].value_counts(
+    normalize=True
+)
 
 # COMMAND ----------
 
 # 28% of flights with delays of more than 15 minutes were rescheduled to another city
-df.query("scheduled_destination_city_code != operation_destination_city_code")["delay_15"].value_counts(normalize=True)
+df.query("scheduled_destination_city_code != operation_destination_city_code")[
+    "delay_15"
+].value_counts(normalize=True)
+
+# COMMAND ----------
+
+# 19% of high-season flights were delayed
+df.query("high_season == 1")[
+    "delay_15"
+].value_counts(normalize=True)
+
+# COMMAND ----------
+
+# Most delays were morning flights
+df.query("delay_15 == 1")[
+    "period_day"
+].value_counts(normalize=True)
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC #### Destination
-# MAGIC 
-# MAGIC - Of the major destinations, international and national flights appear to have two modes. Planned destinations were maintained.
 
 # COMMAND ----------
 
+# Some destinations experience more delays than others.
 sns.catplot(
     x="scheduled_destination_city_code",
     y="delay_15",
@@ -785,9 +860,10 @@ sns.catplot(
     height=5,
     aspect=3,
     legend=True,
-    hue="type_of_flight",
     kind="violin",
-)
+    hue="high_season",
+    split=True
+).set(title ="Delays by scheduled destination when the operation reaches the schedule") 
 
 # COMMAND ----------
 
@@ -800,9 +876,10 @@ sns.catplot(
     height=5,
     aspect=3,
     legend=True,
-    hue="type_of_flight",
+    split=True,
     kind="violin",
-)
+    hue="high_season",
+).set(title ="Delays by scheduled destination when the operation does not reaches the schedule") 
 
 # COMMAND ----------
 
@@ -819,9 +896,10 @@ sns.catplot(
     height=5,
     aspect=3,
     legend=True,
-    hue="type_of_flight",
+    hue="high_season",
+    split=True,
     kind="violin",
-)
+).set(title ="Delays by scheduled airline when the operation reaches the schedule") 
 
 # COMMAND ----------
 
@@ -833,9 +911,24 @@ sns.catplot(
     height=5,
     aspect=3,
     legend=True,
-    hue="type_of_flight",
+    hue="high_season",
+    split=True,
     kind="violin",
-)
+).set(title ="Delays by scheduled airline when the operation does not reaches the schedule") 
+
+# COMMAND ----------
+
+sns.catplot(
+    x="type_of_flight",
+    y="delay_15",
+    data=df,
+    height=5,
+    aspect=3,
+    legend=True,
+    hue="high_season",
+    split=True,
+    kind="violin",
+).set(title ="Delays per type of flight") 
 
 # COMMAND ----------
 
@@ -852,8 +945,9 @@ sns.catplot(
     aspect=3,
     legend=True,
     hue="type_of_flight",
+    split=True,
     kind="violin",
-)
+).set(title ="Delays per day of operation") 
 
 # COMMAND ----------
 
@@ -865,12 +959,9 @@ sns.catplot(
     aspect=3,
     legend=True,
     hue="type_of_flight",
+    split=True,
     kind="violin",
-)
-
-# COMMAND ----------
-
-sns.scatterplot(data=df.query("period_day=='morning' and delay_15==1"), x="period_day", y="delay_15",  hue="type_of_flight")
+).set(title ="Delays per period of day") 
 
 # COMMAND ----------
 
@@ -882,20 +973,16 @@ sns.scatterplot(data=df.query("period_day=='morning' and delay_15==1"), x="perio
 
 # COMMAND ----------
 
-df.columns
-
-# COMMAND ----------
-
 features = [
     "airline_that_operates",
     "day_of_the_week_operation",
     "period_day",
-    "scheduled_destination_city_airline"
+    "scheduled_destination_city_airline",
 ]
 
 # COMMAND ----------
 
-# Pode ser que a feature combinada com outras traga bons resultados
+# It may be that the feature combined with others brings good results
 for f in features:
     print(f" Feature: {f}, Result: {stats.spearmanr(df['delay_15'], df[f])}")
 
@@ -909,7 +996,7 @@ for f in features:
 # MAGIC %md
 # MAGIC ### Scenario 1
 # MAGIC 
-# MAGIC Operational data cannot be used for training because it can lead to leakege data, since we do not have this information at the time of prediction.
+# MAGIC Assumption: Operational data cannot be used for training because it can lead to data leakege, since we do not have this information at the time of prediction.
 
 # COMMAND ----------
 
@@ -923,15 +1010,13 @@ for f in features:
 # COMMAND ----------
 
 model_inputs = [
-    
-        "scheduled_destination_city_code",
-        "scheduled_airline_code",
-        "type_of_flight",
-        "high_season",
-        "delay_15",
-        "period_day",
-        "count_flights_same_datetime",
-    
+    "scheduled_destination_city_code",
+    "scheduled_airline_code",
+    "type_of_flight",
+    "high_season",
+    "delay_15",
+    "period_day",
+    "count_flights_same_datetime",
 ]
 
 # COMMAND ----------
@@ -981,7 +1066,6 @@ train_y = X["delay_15"]
 test_x = y.drop("delay_15", axis=1)
 test_y = y["delay_15"]
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -990,8 +1074,10 @@ test_y = y["delay_15"]
 # COMMAND ----------
 
 # create a categorical encoder and fit it to the training data
-encoder = ce.CatBoostEncoder(cols=['scheduled_destination_city_code', 'scheduled_airline_code'], random_state=42)
-X_train_encoded = encoder.fit_transform(train_x, train_y)
+encoder = ce.CatBoostEncoder(
+    cols=["scheduled_destination_city_code", "scheduled_airline_code"], random_state=42
+)
+X_train_encoded_scenario_1 = encoder.fit_transform(train_x, train_y)
 
 # COMMAND ----------
 
@@ -1013,19 +1099,16 @@ threshold = 0.5
 # COMMAND ----------
 
 # transform the testing data using the trained encoder
-X_test_encoded = encoder.transform(test_x)
+X_test_encoded_scenario_1 = encoder.transform(test_x)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### First train
+# MAGIC #### First experimental training 
 
 # COMMAND ----------
 
-train_set = lgbm.Dataset(
-    X_train_encoded,
-    label=train_y
-)
+train_set = lgbm.Dataset(X_train_encoded_scenario_1, label=train_y)
 
 # COMMAND ----------
 
@@ -1034,12 +1117,12 @@ model = lgbm.train(base_parameters_lgbm_class, train_set)
 # COMMAND ----------
 
 y_pred_train = model.predict(
-    X_train_encoded,
+    X_train_encoded_scenario_1,
     num_iteration=model.best_iteration,
 )
 
 y_pred_test = model.predict(
-    X_test_encoded,
+    X_test_encoded_scenario_1,
     num_iteration=model.best_iteration,
 )
 
@@ -1049,28 +1132,16 @@ y_pred_test = model.predict(
 y_pred_train = continuous_to_binary(y_pred_train, threshold)
 y_pred_test = continuous_to_binary(y_pred_test, threshold)
 
-current_score_test_recall = recall_score(
-   y_pred_test, test_y, zero_division=0
-)
-current_score_train_recall = recall_score(
-    y_pred_train, train_y, zero_division=0
-)
+current_score_test_recall = recall_score(y_pred_test, test_y, zero_division=0)
+current_score_train_recall = recall_score(y_pred_train, train_y, zero_division=0)
 
 
-current_score_test_precision = precision_score(
-   y_pred_test, test_y, zero_division=0
-)
-current_score_train_precision = precision_score(
-    y_pred_train, train_y, zero_division=0
-)
+current_score_test_precision = precision_score(y_pred_test, test_y, zero_division=0)
+current_score_train_precision = precision_score(y_pred_train, train_y, zero_division=0)
 
 
-current_score_test_f1_score = f1_score(
-   y_pred_test, test_y, zero_division=0
-)
-current_score_train_f1_score = f1_score(
-    y_pred_train, train_y, zero_division=0
-)
+current_score_test_f1_score = f1_score(y_pred_test, test_y, zero_division=0)
+current_score_train_f1_score = f1_score(y_pred_train, train_y, zero_division=0)
 
 # COMMAND ----------
 
@@ -1078,12 +1149,21 @@ current_score_test_recall, current_score_train_recall, current_score_test_precis
 
 # COMMAND ----------
 
+# Major mistakes in the minority class
 print(classification_report(train_y, y_pred_train))
 
 # COMMAND ----------
 
 # Confusion Matrix - Train set
 cm = confusion_matrix(train_y, y_pred_train)
+fig = plt.gcf()
+fig.tight_layout()
+sns.heatmap(cm, annot=True, fmt="d")
+
+# COMMAND ----------
+
+# Confusion Matrix - Test set
+cm = confusion_matrix(test_y, y_pred_test)
 fig = plt.gcf()
 fig.tight_layout()
 sns.heatmap(cm, annot=True, fmt="d")
@@ -1121,14 +1201,14 @@ parameters_dict = {
 }
 
 
-WEIGHT_FOR_METRIC_OPTUNA = 1.5
+WEIGHT_FOR_METRIC_OPTUNA = 1.3
 OPTIMIZE_THRESHOLD_OPTUNA = True
 N_TRIALS = 50
 
 # COMMAND ----------
 
 study = lgbm_class_hyperparameter_tuning_pipeline(
-    X_train_encoded,
+    X_train_encoded_scenario_1,
     train_y,
     base_params,
     parameters_dict,
@@ -1146,16 +1226,19 @@ study = lgbm_class_hyperparameter_tuning_pipeline(
 
 parameters = study.best_params
 parameters.update(base_parameters_lgbm_class)
-threshold = study.best_params['threshold']
+threshold = study.best_params["threshold"]
 
 # COMMAND ----------
 
+parameters
+
+# COMMAND ----------
 
 if "threshold" in parameters.keys():
     del parameters["threshold"]
-    threshold = study.best_params['threshold']
+    threshold = study.best_params["threshold"]
 else:
-    threshold=0.5
+    threshold = 0.5
 
 scores_rs_train = []
 scores_rs_test = []
@@ -1167,15 +1250,16 @@ scores_pr_test = []
 n_splits = 5
 kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
 
-
 #  the data just to shuffle it
 # Cross Validation
-for train_index, test_index in kf.split(X_train_encoded, train_y):
-    
-    X_train, X_test = X_train_encoded.iloc[train_index], X_train_encoded.iloc[test_index]
+for train_index, test_index in kf.split(X_train_encoded_scenario_1, train_y):
+
+    X_train, X_test = (
+        X_train_encoded_scenario_1.iloc[train_index],
+        X_train_encoded_scenario_1.iloc[test_index],
+    )
     y_train, y_test = train_y.iloc[train_index], train_y.iloc[test_index]
-    
-    
+
     train_set = lgbm.Dataset(
         X_train,
         label=y_train,
@@ -1203,22 +1287,14 @@ for train_index, test_index in kf.split(X_train_encoded, train_y):
     y_pred_train = continuous_to_binary(y_pred_train, threshold)
     y_pred_test = continuous_to_binary(y_pred_test, threshold)
 
-    current_score_train_rs = recall_score(
-        y_train, y_pred_train, zero_division=0
-    )
-    current_score_test_rs = recall_score(
-        y_test, y_pred_test, zero_division=0
-    )
+    current_score_train_rs = recall_score(y_train, y_pred_train, zero_division=0)
+    current_score_test_rs = recall_score(y_test, y_pred_test, zero_division=0)
 
     scores_rs_train += [current_score_train_rs]
     scores_rs_test += [current_score_test_rs]
-    
-    current_score_train_pr = precision_score(
-        y_train, y_pred_train, zero_division=0
-    )
-    current_score_test_pr = precision_score(
-        y_test, y_pred_test, zero_division=0
-    )
+
+    current_score_train_pr = precision_score(y_train, y_pred_train, zero_division=0)
+    current_score_test_pr = precision_score(y_test, y_pred_test, zero_division=0)
 
     scores_pr_train += [current_score_train_pr]
     scores_pr_test += [current_score_test_pr]
@@ -1240,7 +1316,7 @@ scores_rs_train_mean, scores_pr_train_mean, scores_rs_test_mean, scores_pr_test_
 
 # COMMAND ----------
 
-scores_rs_train_std, scores_pr_train_std, scores_rs_test_std, scores_pr_test_std, 
+scores_rs_train_std, scores_pr_train_std, scores_rs_test_std, scores_pr_test_std,
 
 # COMMAND ----------
 
@@ -1250,16 +1326,14 @@ scores_rs_train_std, scores_pr_train_std, scores_rs_test_std, scores_pr_test_std
 # COMMAND ----------
 
 # Train model
-train_set = lgbm.Dataset(X_train_encoded, label=train_y)
+train_set = lgbm.Dataset(X_train_encoded_scenario_1, label=train_y)
 
-dval = lgbm.Dataset(
-    X_test_encoded, test_y, reference=train_set
-)
+dval = lgbm.Dataset(X_test_encoded_scenario_1, test_y, reference=train_set)
 
 # Save train/validation plot
 evals_results = {}  # to record eval results for plotting
 
-model = lgbm.train(
+lgbm_model_scenario_1 = lgbm.train(
     params=parameters,
     train_set=train_set,
     valid_sets=[train_set, dval],
@@ -1271,41 +1345,30 @@ model_train_plot = lgbm.plot_metric(evals_results)
 
 # COMMAND ----------
 
-y_pred_train = model.predict(
-    X_train_encoded,
-    num_iteration=model.best_iteration,
+y_pred_train = lgbm_model_scenario_1.predict(
+    X_train_encoded_scenario_1
 )
 
-y_pred_test = model.predict(
-    X_test_encoded,
-    num_iteration=model.best_iteration,
+y_pred_test = lgbm_model_scenario_1.predict(
+    X_test_encoded_scenario_1
 )
-    
+
 # Convert to binary
 y_pred_train = continuous_to_binary(y_pred_train, threshold)
 y_pred_test = continuous_to_binary(y_pred_test, threshold)
 
-current_score_train_rs = recall_score(
-train_y, y_pred_train, zero_division=0
-)
-current_score_test_rs = recall_score(
-test_y, y_pred_test, zero_division=0
-)
+current_score_train_rs = recall_score(train_y, y_pred_train, zero_division=0)
+current_score_test_rs = recall_score(test_y, y_pred_test, zero_division=0)
 
 scores_rs_train += [current_score_train_rs]
 scores_rs_test += [current_score_test_rs]
 
-current_score_train_pr = precision_score(
-train_y, y_pred_train, zero_division=0
-)
-current_score_test_pr = precision_score(
-test_y, y_pred_test, zero_division=0
-)
-
+current_score_train_pr = precision_score(train_y, y_pred_train, zero_division=0)
+current_score_test_pr = precision_score(test_y, y_pred_test, zero_division=0)
 
 # COMMAND ----------
 
-current_score_test_recall, current_score_train_recall, current_score_test_precision, current_score_train_precision, current_score_test_f1_score, current_score_train_f1_score
+current_score_test_recall,current_score_train_recall,current_score_test_precision,current_score_train_precision,current_score_test_f1_score,current_score_train_f1_score
 
 # COMMAND ----------
 
@@ -1325,6 +1388,8 @@ sns.heatmap(cm, annot=True, fmt="d")
 
 # COMMAND ----------
 
+# No overfitting is observed
+# 63% of flight delays would be predicted correctly.
 print(classification_report(test_y, y_pred_test))
 
 # COMMAND ----------
@@ -1338,7 +1403,7 @@ print(classification_report(train_y, y_pred_train))
 
 # COMMAND ----------
 
-X, y = train_test_split(
+X_cat, y_cat = train_test_split(
     df[model_inputs],
     stratify=df["delay_15"],
     test_size=0.20,
@@ -1348,54 +1413,47 @@ X, y = train_test_split(
 # COMMAND ----------
 
 params = {
-    'iterations': 500,
-    'learning_rate': 0.05,
-    'depth': 6,
-    'l2_leaf_reg': 3,
-    'border_count': 64,
-    'thread_count': 4,
-    'random_seed': 42,
-    'eval_metric': 'Recall',
-    'verbose': 50,
-    'class_weights': [1, 5] # set higher weight for minority class
+    "iterations": 1000,
+    "learning_rate": 0.05,
+    "depth": 6,
+    "l2_leaf_reg": 3,
+    "border_count": 64,
+    "thread_count": 4,
+    "random_seed": 42,
+    "eval_metric": "Recall",
+    "verbose": 50,
+    "class_weights": [1, 5],  # set higher weight for minority class
 }
 
 # COMMAND ----------
 
-assert set(list(X.index)).intersection(set(y.index)) == set()
+assert set(list(X_cat.index)).intersection(set(y_cat.index)) == set()
 
 # COMMAND ----------
 
-assert X["delay_15"].value_counts(normalize=True)[0] < 0.82
+assert X_cat["delay_15"].value_counts(normalize=True)[0] < 0.82
 
 # COMMAND ----------
 
-assert y["delay_15"].value_counts(normalize=True)[0] < 0.82
+assert y_cat["delay_15"].value_counts(normalize=True)[0] < 0.82
 
 # COMMAND ----------
 
-train_x = X.drop("delay_15", axis=1)
-train_y = X["delay_15"]
+train_x_cat = X_cat.drop("delay_15", axis=1)
+train_y_cat = X_cat["delay_15"]
 
-test_x = y.drop("delay_15", axis=1)
-test_y = y["delay_15"]
-
+test_x_cat = y_cat.drop("delay_15", axis=1)
+test_y_cat = y_cat["delay_15"]
 
 # COMMAND ----------
 
-categorical_features_indices = np.where(train_x.dtypes != np.float)[0]
+categorical_features_indices = np.where(train_x_cat.dtypes != np.float)[0]
 
 train_pool = Pool(
-    data=train_x,
-    label=train_y,
-    cat_features=categorical_features_indices
+    data=train_x_cat, label=train_y_cat, cat_features=categorical_features_indices
 )
 
-test_pool = Pool(
-    data=test_x,
-    label=test_y,
-    cat_features=categorical_features_indices
-)
+test_pool = Pool(data=test_x_cat, label=test_y_cat, cat_features=categorical_features_indices)
 
 # COMMAND ----------
 
@@ -1404,25 +1462,16 @@ cat_model.fit(train_pool, eval_set=test_pool, use_best_model=True, plot=True)
 
 # COMMAND ----------
 
-y_pred_test = cat_model.predict(test_x)
-y_pred_train = cat_model.predict(train_x)
+y_pred_test_cat = cat_model.predict(test_x_cat)
+y_pred_train_cat = cat_model.predict(train_x_cat)
 
 # COMMAND ----------
 
-current_score_train_rs = recall_score(
-train_y, y_pred_train, zero_division=0
-)
-current_score_test_rs = recall_score(
-test_y, y_pred_test, zero_division=0
-)
+current_score_train_rs = recall_score(train_y_cat, y_pred_train_cat, zero_division=0)
+current_score_test_rs = recall_score(test_y_cat, y_pred_test_cat, zero_division=0)
 
-current_score_train_pr = precision_score(
-train_y, y_pred_train, zero_division=0
-)
-current_score_test_pr = precision_score(
-test_y, y_pred_test, zero_division=0
-)
-
+current_score_train_pr = precision_score(train_y_cat, y_pred_train_cat, zero_division=0)
+current_score_test_pr = precision_score(test_y_cat, y_pred_test_cat, zero_division=0)
 
 # COMMAND ----------
 
@@ -1430,16 +1479,17 @@ current_score_train_rs, current_score_test_rs, current_score_train_pr, current_s
 
 # COMMAND ----------
 
-print(classification_report(train_y, y_pred_train))
+print(classification_report(train_y_cat, y_pred_train_cat))
 
 # COMMAND ----------
 
-print(classification_report(test_y, y_pred_test))
+# This model showed a subtle improvement and potential for exploitation.
+print(classification_report(test_y_cat, y_pred_test_cat))
 
 # COMMAND ----------
 
 # Confusion Matrix - Test set
-cm = confusion_matrix(test_y, y_pred_test)
+cm = confusion_matrix(test_y_cat, y_pred_test_cat)
 fig = plt.gcf()
 fig.tight_layout()
 sns.heatmap(cm, annot=True, fmt="d")
@@ -1447,8 +1497,7 @@ sns.heatmap(cm, annot=True, fmt="d")
 # COMMAND ----------
 
 # Confusion Matrix - Train set
-
-cm = confusion_matrix(train_y, y_pred_train)
+cm = confusion_matrix(train_y_cat, y_pred_train_cat)
 fig = plt.gcf()
 fig.tight_layout()
 sns.heatmap(cm, annot=True, fmt="d")
@@ -1459,7 +1508,7 @@ sns.heatmap(cm, annot=True, fmt="d")
 # MAGIC 
 # MAGIC ### Scenario 2
 # MAGIC 
-# MAGIC Operational data should be used for training because we will have this information at the time of training.
+# MAGIC Assumption: Operational data should be used for training because we will have this information at the time of training.
 
 # COMMAND ----------
 
@@ -1536,7 +1585,6 @@ train_y = X["delay_15"]
 test_x = y.drop("delay_15", axis=1)
 test_y = y["delay_15"]
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -1545,8 +1593,18 @@ test_y = y["delay_15"]
 # COMMAND ----------
 
 # create a categorical encoder and fit it to the training data
-encoder = ce.CatBoostEncoder(cols=['scheduled_destination_city_code', 'scheduled_airline_code', 'operation_destination_city_code', 'operated_airline_code', 'day_of_the_week_operation', 'airline_that_operates'], random_state=42)
-X_train_encoded = encoder.fit_transform(train_x, train_y)
+encoder = ce.CatBoostEncoder(
+    cols=[
+        "scheduled_destination_city_code",
+        "scheduled_airline_code",
+        "operation_destination_city_code",
+        "operated_airline_code",
+        "day_of_the_week_operation",
+        "airline_that_operates",
+    ],
+    random_state=42,
+)
+X_train_encoded_scenario_2 = encoder.fit_transform(train_x, train_y)
 
 # COMMAND ----------
 
@@ -1568,7 +1626,7 @@ threshold = 0.5
 # COMMAND ----------
 
 # transform the testing data using the trained encoder
-X_test_encoded = encoder.transform(test_x)
+X_test_encoded_scenario_2 = encoder.transform(test_x)
 
 # COMMAND ----------
 
@@ -1577,10 +1635,7 @@ X_test_encoded = encoder.transform(test_x)
 
 # COMMAND ----------
 
-train_set = lgbm.Dataset(
-    X_train_encoded,
-    label=train_y
-)
+train_set = lgbm.Dataset(X_train_encoded_scenario_2, label=train_y)
 
 # COMMAND ----------
 
@@ -1589,12 +1644,12 @@ model = lgbm.train(base_parameters_lgbm_class, train_set)
 # COMMAND ----------
 
 y_pred_train = model.predict(
-    X_train_encoded,
+    X_train_encoded_scenario_2,
     num_iteration=model.best_iteration,
 )
 
 y_pred_test = model.predict(
-    X_test_encoded,
+    X_test_encoded_scenario_2,
     num_iteration=model.best_iteration,
 )
 
@@ -1604,28 +1659,16 @@ y_pred_test = model.predict(
 y_pred_train = continuous_to_binary(y_pred_train, threshold)
 y_pred_test = continuous_to_binary(y_pred_test, threshold)
 
-current_score_test_recall = recall_score(
-   y_pred_test, test_y, zero_division=0
-)
-current_score_train_recall = recall_score(
-    y_pred_train, train_y, zero_division=0
-)
+current_score_test_recall = recall_score(y_pred_test, test_y, zero_division=0)
+current_score_train_recall = recall_score(y_pred_train, train_y, zero_division=0)
 
 
-current_score_test_precision = precision_score(
-   y_pred_test, test_y, zero_division=0
-)
-current_score_train_precision = precision_score(
-    y_pred_train, train_y, zero_division=0
-)
+current_score_test_precision = precision_score(y_pred_test, test_y, zero_division=0)
+current_score_train_precision = precision_score(y_pred_train, train_y, zero_division=0)
 
 
-current_score_test_f1_score = f1_score(
-   y_pred_test, test_y, zero_division=0
-)
-current_score_train_f1_score = f1_score(
-    y_pred_train, train_y, zero_division=0
-)
+current_score_test_f1_score = f1_score(y_pred_test, test_y, zero_division=0)
+current_score_train_f1_score = f1_score(y_pred_train, train_y, zero_division=0)
 
 # COMMAND ----------
 
@@ -1676,14 +1719,14 @@ parameters_dict = {
 }
 
 
-WEIGHT_FOR_METRIC_OPTUNA = 1.5
+WEIGHT_FOR_METRIC_OPTUNA = 1.3
 OPTIMIZE_THRESHOLD_OPTUNA = True
 N_TRIALS = 50
 
 # COMMAND ----------
 
 study = lgbm_class_hyperparameter_tuning_pipeline(
-    X_train_encoded,
+    X_train_encoded_scenario_2,
     train_y,
     base_params,
     parameters_dict,
@@ -1705,16 +1748,15 @@ study.best_params
 
 parameters = study.best_params
 parameters.update(base_parameters_lgbm_class)
-threshold = study.best_params['threshold']
+threshold = study.best_params["threshold"]
 
 # COMMAND ----------
 
-
 if "threshold" in parameters.keys():
     del parameters["threshold"]
-    threshold = study.best_params['threshold']
+    threshold = study.best_params["threshold"]
 else:
-    threshold=0.5
+    threshold = 0.5
 
 scores_rs_train = []
 scores_rs_test = []
@@ -1729,12 +1771,14 @@ kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
 
 #  the data just to shuffle it
 # Cross Validation
-for train_index, test_index in kf.split(X_train_encoded, train_y):
-    
-    X_train, X_test = X_train_encoded.iloc[train_index], X_train_encoded.iloc[test_index]
+for train_index, test_index in kf.split(X_train_encoded_scenario_2, train_y):
+
+    X_train, X_test = (
+        X_train_encoded.iloc[train_index],
+        X_train_encoded.iloc[test_index],
+    )
     y_train, y_test = train_y.iloc[train_index], train_y.iloc[test_index]
-    
-    
+
     train_set = lgbm.Dataset(
         X_train,
         label=y_train,
@@ -1762,22 +1806,14 @@ for train_index, test_index in kf.split(X_train_encoded, train_y):
     y_pred_train = continuous_to_binary(y_pred_train, threshold)
     y_pred_test = continuous_to_binary(y_pred_test, threshold)
 
-    current_score_train_rs = recall_score(
-        y_train, y_pred_train, zero_division=0
-    )
-    current_score_test_rs = recall_score(
-        y_test, y_pred_test, zero_division=0
-    )
+    current_score_train_rs = recall_score(y_train, y_pred_train, zero_division=0)
+    current_score_test_rs = recall_score(y_test, y_pred_test, zero_division=0)
 
     scores_rs_train += [current_score_train_rs]
     scores_rs_test += [current_score_test_rs]
-    
-    current_score_train_pr = precision_score(
-        y_train, y_pred_train, zero_division=0
-    )
-    current_score_test_pr = precision_score(
-        y_test, y_pred_test, zero_division=0
-    )
+
+    current_score_train_pr = precision_score(y_train, y_pred_train, zero_division=0)
+    current_score_test_pr = precision_score(y_test, y_pred_test, zero_division=0)
 
     scores_pr_train += [current_score_train_pr]
     scores_pr_test += [current_score_test_pr]
@@ -1799,7 +1835,7 @@ scores_rs_train_mean, scores_pr_train_mean, scores_rs_test_mean, scores_pr_test_
 
 # COMMAND ----------
 
-scores_rs_train_std, scores_pr_train_std, scores_rs_test_std, scores_pr_test_std, 
+scores_rs_train_std, scores_pr_train_std, scores_rs_test_std, scores_pr_test_std,
 
 # COMMAND ----------
 
@@ -1809,16 +1845,14 @@ scores_rs_train_std, scores_pr_train_std, scores_rs_test_std, scores_pr_test_std
 # COMMAND ----------
 
 # Train model
-train_set = lgbm.Dataset(X_train_encoded, label=train_y)
+train_set = lgbm.Dataset(X_train_encoded_scenario_2, label=train_y)
 
-dval = lgbm.Dataset(
-    X_test_encoded, test_y, reference=train_set
-)
+dval = lgbm.Dataset(X_test_encoded_scenario_2, test_y, reference=train_set)
 
 # Save train/validation plot
 evals_results = {}  # to record eval results for plotting
 
-model = lgbm.train(
+lgbm_model_scenario_2 = lgbm.train(
     params=parameters,
     train_set=train_set,
     valid_sets=[train_set, dval],
@@ -1830,37 +1864,26 @@ model_train_plot = lgbm.plot_metric(evals_results)
 
 # COMMAND ----------
 
-y_pred_train = model.predict(
-    X_train_encoded,
-    num_iteration=model.best_iteration,
+y_pred_train = lgbm_model_scenario_2.predict(
+    X_train_encoded_scenario_2,
 )
 
-y_pred_test = model.predict(
-    X_test_encoded,
-    num_iteration=model.best_iteration,
+y_pred_test = lgbm_model_scenario_2.predict(
+    X_test_encoded_scenario_2,
 )
-    
+
 # Convert to binary
 y_pred_train = continuous_to_binary(y_pred_train, threshold)
 y_pred_test = continuous_to_binary(y_pred_test, threshold)
 
-current_score_train_rs = recall_score(
-train_y, y_pred_train, zero_division=0
-)
-current_score_test_rs = recall_score(
-test_y, y_pred_test, zero_division=0
-)
+current_score_train_rs = recall_score(train_y, y_pred_train, zero_division=0)
+current_score_test_rs = recall_score(test_y, y_pred_test, zero_division=0)
 
 scores_rs_train += [current_score_train_rs]
 scores_rs_test += [current_score_test_rs]
 
-current_score_train_pr = precision_score(
-train_y, y_pred_train, zero_division=0
-)
-current_score_test_pr = precision_score(
-test_y, y_pred_test, zero_division=0
-)
-
+current_score_train_pr = precision_score(train_y, y_pred_train, zero_division=0)
+current_score_test_pr = precision_score(test_y, y_pred_test, zero_division=0)
 
 # COMMAND ----------
 
@@ -1923,6 +1946,8 @@ sns.heatmap(cm, annot=True, fmt="d")
 # MAGIC - Preprocessing: Preprocessing techniques such as scaling, normalization, and imputation can sometimes improve model performance by making the data more suitable for the model to learn from.
 # MAGIC 
 # MAGIC - Test more categorical enconders: Choosing the correct categorical encoder can significantly improve model performance because it can help transform categorical features into a format that machine learning algorithms can better understand and make use of. By selecting the right categorical encoder, you can improve the quality of the input data provided to the model, which can in turn improve its accuracy and predictive power.
+# MAGIC 
+# MAGIC - Explore and optimize the Castboost model and even develop other models like logistic regression or random forest.
 
 # COMMAND ----------
 
@@ -1931,28 +1956,91 @@ sns.heatmap(cm, annot=True, fmt="d")
 
 # COMMAND ----------
 
-explainer = shap.TreeExplainer(model, X_train_encoded)
-shap_values = explainer.shap_values(X_test_encoded)
+explainer = shap.TreeExplainer(lgbm_model_scenario_1)
+shap_values = explainer.shap_values(X_test_encoded_scenario_1)
 
 # COMMAND ----------
 
-shap.summary_plot(shap_values, X_test_encoded)
+# Features that showed more significance were features created and scheduled destination and airline.
+shap.summary_plot(shap_values[0], features=X_test_encoded_scenario_1, show = False)
 
 # COMMAND ----------
 
-xmin = np.quantile(shap_values[:, feature].data, 0.05)
-xmax = np.quantile(shap_values[:, feature].data, 0.95)
-
-shap.plots.scatter(shap_values[:, feature], xmin=xmin, xmax=xmax)
-
-# COMMAND ----------
-
-explainer = shap.TreeExplainer(cat_model)
-shap_values = explainer.shap_values(test_pool)
+# MAGIC %md
+# MAGIC 
+# MAGIC Interpretation (globally):
+# MAGIC 
+# MAGIC scheduled destination, airline and period_day_morning were most influential features in determining outcome
 
 # COMMAND ----------
 
-shap.summary_plot(shap_values, test_x, plot_type="bar")
+shap.dependence_plot("scheduled_destination_city_code", shap_values[1], X_test_encoded_scenario_1)
+
+# COMMAND ----------
+
+shap.dependence_plot("scheduled_airline_code", shap_values[1], X_test_encoded_scenario_1)
+
+# COMMAND ----------
+
+# morning had lower probability of delay (lower shap values)
+shap.dependence_plot("period_day_morning", shap_values[1], X_test_encoded_scenario_1)
+
+# COMMAND ----------
+
+# National had lower probability of delay (lower shap values)
+shap.dependence_plot("type_of_flight_N", shap_values[1], X_test_encoded_scenario_1)
+
+# COMMAND ----------
+
+# high_season had higher probability of delay (higher shap values)
+shap.dependence_plot("high_season", shap_values[1], X_test_encoded_scenario_1)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Most influential in the prediction task - Scenario 2
+
+# COMMAND ----------
+
+explainer = shap.TreeExplainer(lgbm_model_scenario_2)
+shap_values = explainer.shap_values(X_test_encoded_scenario_2)
+
+# COMMAND ----------
+
+# Features that showed more significance were features created and scheduled destination and airline.
+shap.summary_plot(shap_values[0], features=X_test_encoded_scenario_2, show = False)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC Interpretation (globally):
+# MAGIC 
+# MAGIC month_operation, day_of_the_week_operation and type_of_flight_N were most influential features in determining outcome
+
+# COMMAND ----------
+
+# Months from the middle of the year onwards are more likely to be delayed (higher shap values)
+shap.dependence_plot("month_operation", shap_values[1], X_test_encoded_scenario_2)
+
+# COMMAND ----------
+
+# morning had lower probability of delay (lower shap values)
+shap.dependence_plot("period_day_morning", shap_values[1], X_test_encoded_scenario_2)
+
+# COMMAND ----------
+
+# National had lower probability of delay (lower shap values)
+shap.dependence_plot("type_of_flight_N", shap_values[1], X_test_encoded_scenario_2)
+
+# COMMAND ----------
+
+# high_season had higher probability of delay (higher shap values)
+shap.dependence_plot("high_season", shap_values[1], X_test_encoded_scenario_2)
+
+# COMMAND ----------
+
+shap.dependence_plot("day_operation", shap_values[1], X_test_encoded_scenario_2)
 
 # COMMAND ----------
 
